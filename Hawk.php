@@ -1,5 +1,5 @@
 <?php
-/**
+/*
  * Hawk Markdown Parser - Markdown parser adapted for wiki usage
  *
  * @version     1.0.0
@@ -22,7 +22,95 @@ class Hawk {
 
     private $_version = '1.0.0-DEV';
 
-    function text($text) {
+    protected $breaksEnabled;
+    protected $markupEscaped;
+    protected $urlsLinked = true;
+
+    protected $internalLinkBaseUrl;
+
+    protected $blockTypes = [
+        '#' => ['Header'],
+        '*' => ['Rule', 'List'],
+        '+' => ['List'],
+        '-' => ['SetTextHeader', 'Table', 'Rule', 'List'],
+        '0' => ['List'],
+        '1' => ['List'],
+        '2' => ['List'],
+        '3' => ['List'],
+        '4' => ['List'],
+        '5' => ['List'],
+        '6' => ['List'],
+        '7' => ['List'],
+        '8' => ['List'],
+        '9' => ['List'],
+        ':' => ['Table'],
+        '<' => ['Comment', 'Markup'],
+        '=' => ['SetTextHeader'],
+        '>' => ['Quote'],
+        '[' => ['Reference'],
+        '_' => ['Rule'],
+        '`' => ['FencedCode'],
+        '|' => ['Table'],
+        '~' => ['FencedCode'],
+    ];
+
+    protected $unmarkedBlockTypes = [
+        'Code',
+    ];
+
+    protected $definitionData;
+
+    protected $specialCharacters = [
+        '\\', '`', '*', '_', '{', '}', '[', ']', '(', ')', '>', '#', '+', '-', '.', '!', '|',
+    ];
+
+    protected $strongRegex = [
+        '*' => '/^[*]{2}((?:\\\\\*|[^*]|[*][^*]*[*])+?)[*]{2}(?![*])/s',
+        '_' => '/^__((?:\\\\_|[^_]|_[^_]*_)+?)__(?!_)/us',
+    ];
+
+    protected $emRegex = [
+        '*' => '/^[*]((?:\\\\\*|[^*]|[*][*][^*]+?[*][*])+?)[*](?![*])/s',
+        '_' => '/^_((?:\\\\_|[^_]|__[^_]*__)+?)_(?!_)\b/us',
+    ];
+
+    protected $regexHtmlAttribute = '[a-zA-Z_:][\w:.-]*(?:\s*=\s*(?:[^"\'=<>`\s]+|"[^"]*"|\'[^\']*\'))?';
+
+    protected $voidElements = [
+        'area', 'base', 'br', 'col', 'command', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'param', 'source',
+    ];
+
+    protected $textLevelElements = [
+        'a', 'br', 'bdo', 'abbr', 'blink', 'nextid', 'acronym', 'basefont',
+        'b', 'em', 'big', 'cite', 'small', 'spacer', 'listing',
+        'i', 'rp', 'del', 'code', 'strike', 'marquee',
+        'q', 'rt', 'ins', 'font', 'strong',
+        's', 'tt', 'kbd', 'mark',
+        'u', 'xm', 'sub', 'nobr',
+        'sup', 'ruby',
+        'var', 'span',
+        'wbr', 'time',
+    ];
+
+    protected $inlineTypes = [
+        '%' => ['InternalLink'],
+        '"' => ['SpecialCharacter'],
+        '!' => ['Image'],
+        '&' => ['SpecialCharacter'],
+        '*' => ['Emphasis'],
+        ':' => ['Url'],
+        '<' => ['UrlTag', 'EmailTag', 'Markup', 'SpecialCharacter'],
+        '>' => ['SpecialCharacter'],
+        '[' => ['Link'],
+        '_' => ['Emphasis'],
+        '`' => ['Code'],
+        '~' => ['Strikethrough'],
+        '\\' => ['EscapeSequence'],
+    ];
+
+    protected $inlineMarkerList = '%!"*_&[:<>`~\\';
+
+    function text(string $text) : string {
         // Make sure no definitions are set
         $this->definitionData = [];
 
@@ -43,60 +131,6 @@ class Hawk {
 
         return $markup;
     }
-
-    function setBreaksEnabled($breaksEnabled) {
-        $this->breaksEnabled = $breaksEnabled;
-
-        return $this;
-    }
-
-    protected $breaksEnabled;
-
-    function setMarkupEscaped($markupEscaped) {
-        $this->markupEscaped = $markupEscaped;
-
-        return $this;
-    }
-
-    protected $markupEscaped;
-
-    function setUrlsLinked($urlsLinked) {
-        $this->urlsLinked = $urlsLinked;
-
-        return $this;
-    }
-
-    protected $urlsLinked = true;
-
-    protected $blockTypes = [
-        '#' => ['Header'],
-        '*' => ['Rule', 'List'],
-        '+' => ['List'],
-        '-' => ['SetextHeader', 'Table', 'Rule', 'List'],
-        '0' => ['List'],
-        '1' => ['List'],
-        '2' => ['List'],
-        '3' => ['List'],
-        '4' => ['List'],
-        '5' => ['List'],
-        '6' => ['List'],
-        '7' => ['List'],
-        '8' => ['List'],
-        '9' => ['List'],
-        ':' => ['Table'],
-        '<' => ['Comment', 'Markup'],
-        '=' => ['SetextHeader'],
-        '>' => ['Quote'],
-        '[' => ['Reference'],
-        '_' => ['Rule'],
-        '`' => ['FencedCode'],
-        '|' => ['Table'],
-        '~' => ['FencedCode'],
-    ];
-
-    protected $unmarkedBlockTypes = [
-        'Code',
-    ];
 
     protected function lines(array $lines) {
         $currentBlock = null;
@@ -142,7 +176,8 @@ class Hawk {
                     $currentBlock = $block;
 
                     continue;
-                } else {
+                }
+                else {
                     if ($this->isBlockCompletable($currentBlock['type'])) {
                         $currentBlock = $this->{'block' . $currentBlock['type'] . 'Complete'}($currentBlock);
                     }
@@ -183,7 +218,8 @@ class Hawk {
 
             if (isset($currentBlock) and !isset($currentBlock['type']) and !isset($currentBlock['interrupted'])) {
                 $currentBlock['element']['text'] .= "\n" . $text;
-            } else {
+            }
+            else {
                 $blocks [] = $currentBlock;
 
                 $currentBlock = $this->paragraph($line);
@@ -245,7 +281,7 @@ class Hawk {
             return $block;
         }
 
-        return [];
+        return null;
     }
 
     protected function blockCodeContinue($line, $block) {
@@ -265,7 +301,7 @@ class Hawk {
             return $block;
         }
 
-        return [];
+        return null;
     }
 
     protected function blockCodeComplete($block) {
@@ -295,7 +331,7 @@ class Hawk {
             return $block;
         }
 
-        return [];
+        return null;
     }
 
     protected function blockCommentContinue($line, array $block) {
@@ -339,7 +375,7 @@ class Hawk {
             return $block;
         }
 
-        return [];
+        return null;
     }
 
     protected function blockFencedCodeContinue($line, $block) {
@@ -401,7 +437,7 @@ class Hawk {
             return $block;
         }
 
-        return [];
+        return null;
     }
 
     protected function blockList($line) {
@@ -438,7 +474,7 @@ class Hawk {
             return $block;
         }
 
-        return [];
+        return null;
     }
 
     protected function blockListContinue($line, array $block) {
@@ -490,7 +526,7 @@ class Hawk {
             return $block;
         }
 
-        return [];
+        return null;
     }
 
     protected function blockQuote($line) {
@@ -506,7 +542,7 @@ class Hawk {
             return $block;
         }
 
-        return [];
+        return null;
     }
 
     protected function blockQuoteContinue($line, array $block) {
@@ -528,7 +564,7 @@ class Hawk {
             return $block;
         }
 
-        return [];
+        return null;
     }
 
     protected function blockRule($line) {
@@ -542,10 +578,10 @@ class Hawk {
             return $block;
         }
 
-        return [];
+        return null;
     }
 
-    protected function blockSetextHeader($line, array $block = null) {
+    protected function blockSetTextHeader($line, array $block = null) {
         if (!isset($block) or isset($block['type']) or isset($block['interrupted'])) {
             return null;
         }
@@ -556,7 +592,7 @@ class Hawk {
             return $block;
         }
 
-        return [];
+        return null;
     }
 
     protected function blockMarkup($line) {
@@ -587,7 +623,8 @@ class Hawk {
 
                     $block['void'] = true;
                 }
-            } else {
+            }
+            else {
                 if (isset($matches[2]) or in_array($matches[1], $this->voidElements)) {
                     return null;
                 }
@@ -600,7 +637,7 @@ class Hawk {
             return $block;
         }
 
-        return [];
+        return null;
     }
 
     protected function blockMarkupContinue($line, array $block) {
@@ -617,7 +654,8 @@ class Hawk {
         {
             if ($block['depth'] > 0) {
                 $block['depth']--;
-            } else {
+            }
+            else {
                 $block['closed'] = true;
             }
         }
@@ -751,7 +789,7 @@ class Hawk {
             return $block;
         }
 
-        return [];
+        return null;
     }
 
     protected function blockTableContinue($line, array $block) {
@@ -798,7 +836,7 @@ class Hawk {
             return $block;
         }
 
-        return [];
+        return null;
     }
 
     protected function paragraph($line) {
@@ -812,23 +850,6 @@ class Hawk {
 
         return $block;
     }
-
-    protected $inlineTypes = [
-        '"' => ['SpecialCharacter'],
-        '!' => ['Image'],
-        '&' => ['SpecialCharacter'],
-        '*' => ['Emphasis'],
-        ':' => ['Url'],
-        '<' => ['UrlTag', 'EmailTag', 'Markup', 'SpecialCharacter'],
-        '>' => ['SpecialCharacter'],
-        '[' => ['Link'],
-        '_' => ['Emphasis'],
-        '`' => ['Code'],
-        '~' => ['Strikethrough'],
-        '\\' => ['EscapeSequence'],
-    ];
-
-    protected $inlineMarkerList = '!"*_&[:<>`~\\';
 
     public function line($text) {
         $markup = '';
@@ -907,7 +928,7 @@ class Hawk {
             ];
         }
 
-        return [];
+        return null;
     }
 
     protected function inlineEmailTag($excerpt) {
@@ -930,7 +951,7 @@ class Hawk {
             ];
         }
 
-        return [];
+        return null;
     }
 
     protected function inlineEmphasis($excerpt) {
@@ -942,9 +963,11 @@ class Hawk {
 
         if ($excerpt['text'][1] === $marker and preg_match($this->strongRegex[$marker], $excerpt['text'], $matches)) {
             $emphasis = 'strong';
-        } else if (preg_match($this->emRegex[$marker], $excerpt['text'], $matches)) {
+        }
+        else if (preg_match($this->emRegex[$marker], $excerpt['text'], $matches)) {
             $emphasis = 'em';
-        } else {
+        }
+        else {
             return null;
         }
 
@@ -966,7 +989,7 @@ class Hawk {
             ];
         }
 
-        return [];
+        return null;
     }
 
     protected function inlineImage($excerpt) {
@@ -1021,7 +1044,8 @@ class Hawk {
             $extent += strlen($matches[0]);
 
             $remainder = substr($remainder, $extent);
-        } else {
+        }
+        else {
             return null;
         }
 
@@ -1033,13 +1057,15 @@ class Hawk {
             }
 
             $extent += strlen($matches[0]);
-        } else {
+        }
+        else {
             if (preg_match('/^\s*\[(.*?)\]/', $remainder, $matches)) {
                 $definition = strlen($matches[1]) ? $matches[1] : $element['text'];
                 $definition = strtolower($definition);
 
                 $extent += strlen($matches[0]);
-            } else {
+            }
+            else {
                 $definition = strtolower($element['text']);
             }
 
@@ -1063,7 +1089,7 @@ class Hawk {
 
     protected function inlineMarkup($excerpt) {
         if ($this->markupEscaped or strpos($excerpt['text'], '>') === false) {
-            return [];
+            return null;
         }
 
         if ($excerpt['text'][1] === '/' and preg_match('/^<\/\w*[ ]*>/s', $excerpt['text'], $matches)) {
@@ -1087,7 +1113,7 @@ class Hawk {
             ];
         }
 
-        return [];
+        return null;
     }
 
     protected function inlineSpecialCharacter($excerpt) {
@@ -1107,12 +1133,12 @@ class Hawk {
             ];
         }
 
-        return [];
+        return null;
     }
 
     protected function inlineStrikethrough($excerpt) {
         if (!isset($excerpt['text'][1])) {
-            return [];
+            return null;
         }
 
         if ($excerpt['text'][1] === '~' and preg_match('/^~~(?=\S)(.+?)(?<=\S)~~/', $excerpt['text'], $matches)) {
@@ -1126,12 +1152,12 @@ class Hawk {
             ];
         }
 
-        return [];
+        return null;
     }
 
     protected function inlineUrl($excerpt) {
         if ($this->urlsLinked !== true or !isset($excerpt['text'][2]) or $excerpt['text'][2] !== '/') {
-            return [];
+            return null;
         }
 
         if (preg_match('/\bhttps?:[\/]{2}[^\s<]+\b\/*/ui', $excerpt['context'], $matches, PREG_OFFSET_CAPTURE)) {
@@ -1148,7 +1174,7 @@ class Hawk {
             ];
         }
 
-        return [];
+        return null;
     }
 
     protected function inlineUrlTag($excerpt) {
@@ -1167,13 +1193,40 @@ class Hawk {
             ];
         }
 
-        return [];
+        return null;
+    }
+
+    protected function inlineInternalLink($excerpt) : ?array {
+        $baseUrl = $this->internalLinkBaseUrl ?? '';
+
+        if (!empty($excerpt['text']) && preg_match('/\%(.*)\%/', $excerpt['text'], $output)) {
+            if (empty($output[1]))
+                return null;
+
+            $label = str_replace('_', ' ', $output[1]);
+            $url = str_replace(['&', '<', ' '], ['&amp;', '&lt;', '_'], $output[1]);
+
+            return [
+                'extent' => strlen($excerpt['text']),
+                'element' => [
+                    'name' => 'a',
+                    'text' => $label,
+                    'attributes' => [
+                        'href' => $baseUrl . $url,
+                    ],
+                ],
+            ];
+        }
+
+        else
+            return null;
     }
 
     protected function unmarkedText($text) {
         if ($this->breaksEnabled) {
             $text = preg_replace('/[ ]*\n/', "<br />\n", $text);
-        } else {
+        }
+        else {
             $text = preg_replace('/(?:[ ][ ]+|[ ]*\\\\)\n/', "<br />\n", $text);
             $text = str_replace(" \n", "\n", $text);
         }
@@ -1199,12 +1252,14 @@ class Hawk {
 
             if (isset($element['handler'])) {
                 $markup .= $this->{$element['handler']}($element['text']);
-            } else {
+            }
+            else {
                 $markup .= $element['text'];
             }
 
             $markup .= '</' . $element['name'] . '>';
-        } else {
+        }
+        else {
             $markup .= ' />';
         }
 
@@ -1240,61 +1295,30 @@ class Hawk {
         return $markup;
     }
 
-    function parse($text) {
-        $markup = $this->text($text);
-
-        return $markup;
-    }
-
-    static function instance($name = 'default') {
-        if (isset(self::$instances[$name])) {
-            return self::$instances[$name];
-        }
-
-        $instance = new static();
-
-        self::$instances[$name] = $instance;
-
-        return $instance;
-    }
-
-    private static $instances = [];
-
-    protected $definitionData;
-
-    protected $specialCharacters = [
-        '\\', '`', '*', '_', '{', '}', '[', ']', '(', ')', '>', '#', '+', '-', '.', '!', '|',
-    ];
-
-    protected $strongRegex = [
-        '*' => '/^[*]{2}((?:\\\\\*|[^*]|[*][^*]*[*])+?)[*]{2}(?![*])/s',
-        '_' => '/^__((?:\\\\_|[^_]|_[^_]*_)+?)__(?!_)/us',
-    ];
-
-    protected $emRegex = [
-        '*' => '/^[*]((?:\\\\\*|[^*]|[*][*][^*]+?[*][*])+?)[*](?![*])/s',
-        '_' => '/^_((?:\\\\_|[^_]|__[^_]*__)+?)_(?!_)\b/us',
-    ];
-
-    protected $regexHtmlAttribute = '[a-zA-Z_:][\w:.-]*(?:\s*=\s*(?:[^"\'=<>`\s]+|"[^"]*"|\'[^\']*\'))?';
-
-    protected $voidElements = [
-        'area', 'base', 'br', 'col', 'command', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'param', 'source',
-    ];
-
-    protected $textLevelElements = [
-        'a', 'br', 'bdo', 'abbr', 'blink', 'nextid', 'acronym', 'basefont',
-        'b', 'em', 'big', 'cite', 'small', 'spacer', 'listing',
-        'i', 'rp', 'del', 'code', 'strike', 'marquee',
-        'q', 'rt', 'ins', 'font', 'strong',
-        's', 'tt', 'kbd', 'mark',
-        'u', 'xm', 'sub', 'nobr',
-        'sup', 'ruby',
-        'var', 'span',
-        'wbr', 'time',
-    ];
+    /*
+     * Getters and setters
+     */
 
     public function getVersion(): string {
         return $this->_version;
+    }
+
+    public function setBreaksEnabled(bool $breaksEnabled): self {
+        $this->breaksEnabled = $breaksEnabled;
+        return $this;
+    }
+
+    public function setUrlsLinked(bool $urlsLinked): self {
+        $this->urlsLinked = $urlsLinked;
+        return $this;
+    }
+
+    public function setMarkupEscaped(bool $markupEscaped): self {
+        $this->markupEscaped = $markupEscaped;
+        return $this;
+    }
+
+    public function setInternalLinkBaseUrl(string $url) : void {
+        $this->internalLinkBaseUrl = $url;
     }
 }
