@@ -5,7 +5,7 @@ Markdown Parser in PHP
 
 ### Installation
 
-Include `Parsedown.php` or install the Composer package.
+Include `Hawk.php` or install the Composer package.
 
 ### Example
 
